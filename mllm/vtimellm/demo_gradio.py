@@ -4,6 +4,7 @@ Adapted from: https://github.com/Vision-CAIR/MiniGPT-4/blob/main/demo.py
 import argparse
 import os
 root_dir = os.path.join(os.getcwd(), "..")
+
 import sys
 sys.path.append(root_dir)
 
