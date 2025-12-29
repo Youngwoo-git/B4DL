@@ -30,10 +30,6 @@ class VTimeLLMMetaForCausalLM(ABC):
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels, images
     ):
-        # print(position_ids, attention_mask)
-        # if past_key_values:
-        #     print(past_key_values[-1][-1].shape)
-        # print(input_ids.shape, position_ids.shape, attention_mask.shape, past_key_values.shape, images)
         if images is None or input_ids.shape[1] == 1:
             if past_key_values is not None and images is not None and input_ids.shape[1] == 1:
                 if self.get_model().config.model_type == 'chatglm':
@@ -53,10 +49,8 @@ class VTimeLLMMetaForCausalLM(ABC):
             image_features = self.get_model().mm_projector(concat_images)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
-            # image_features = [x.flatten(0, 1) for x in image_features]
         else:
             image_features = self.get_model().mm_projector(images)
-        # print([image.shape for image in image_features])
         
         _labels = labels
         _position_ids = position_ids
@@ -174,5 +168,5 @@ class VTimeLLMMetaForCausalLM(ABC):
             new_input_embeds = new_input_embeds.transpose(0, 1).contiguous()
         else:
             fake_input_ids = None
-        # print(position_ids, attention_mask)
+        
         return fake_input_ids, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
