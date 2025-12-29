@@ -8,213 +8,6 @@ from tqdm import tqdm
 import argparse
 import random
 
-
-
-# ### 1️⃣ GENERATE `scene_tracks` PER SCENE TO REDUCE MEMORY ###
-# def track_movement(nusc, sample, scene_tracks):
-#     """
-#     Tracks object movement across multiple frames, separated by camera view.
-#     """
-#     scene_token = sample['scene_token']  # Identify the scene
-
-#     # Process all cameras in the dataset
-#     cameras = ["CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT"]
-    
-#     for cam in cameras:
-#         cam_token = sample['data'][cam]
-#         cam_data = nusc.get('sample_data', cam_token)
-#         img_width, img_height = cam_data['width'], cam_data['height']
-#         timestamp = sample['timestamp']
-
-#         # Get camera calibration (intrinsic matrix)
-#         calib_sensor = nusc.get('calibrated_sensor', cam_data['calibrated_sensor_token'])
-#         cam_intrinsic = np.array(calib_sensor['camera_intrinsic'])
-
-#         # Ego pose (needed for world-to-vehicle transform)
-#         ego_pose = nusc.get('ego_pose', cam_data['ego_pose_token'])
-
-#         if scene_token not in scene_tracks:
-#             scene_tracks[scene_token] = {}
-
-#         # Handle missing annotations in test set
-#         if 'anns' in sample:
-#             for ann_token in sample['anns']:
-#                 ann = nusc.get('sample_annotation', ann_token)
-#                 instance_token = ann['instance_token']
-                
-#                 #################################### moving objects only ####################################
-# #                 is_moving = False
-# #                 for attr_token in ann["attribute_tokens"]:
-# #                     attr = nusc.get("attribute", attr_token)
-# #                     if "moving" in attr["name"]:  # Check if attribute contains "moving"
-# #                         is_moving = True
-# #                         break
-                
-# #                 if not is_moving:
-# #                     continue  # Skip non-moving objects
-#                 is_moving = False
-#                 for attr_token in ann["attribute_tokens"]:
-#                     attr = nusc.get("attribute", attr_token)["name"]
-
-#                     # ✅ Allow "moving" vehicles, moving pedestrians, and cyclists with riders
-#                     if "moving" in attr or "cycle.with_rider" in attr:
-#                         is_moving = True
-#                         break
-
-#                     # ❌ Skip parked, stopped, or standing objects
-#                     if "parked" in attr or "stopped" in attr or "standing" in attr:
-#                         is_moving = False
-#                         break  # Stop checking further if any stationary attribute is found
-
-#                 if not is_moving:
-#                     continue  # Skip non-moving objects
-
-#                 #################################### moving objects only ####################################
-                
-                
-#                 # Convert annotation rotation to Quaternion
-#                 box = Box(ann['translation'], ann['size'], Quaternion(ann['rotation']))
-
-#                 # Transform to ego vehicle frame
-#                 box.translate(-np.array(ego_pose['translation']))
-#                 box.rotate(Quaternion(ego_pose['rotation']).inverse)
-
-#                 # Transform to camera frame
-#                 box.translate(-np.array(calib_sensor['translation']))
-#                 box.rotate(Quaternion(calib_sensor['rotation']).inverse)
-
-#                 # Project 3D box to 2D image
-#                 corners_3d = box.corners()
-#                 corners_2d = view_points(corners_3d, cam_intrinsic, normalize=True)[:2]
-
-#                 # Get bounding box (xmin, ymin, xmax, ymax)
-#                 x_min, y_min = np.min(corners_2d, axis=1)
-#                 x_max, y_max = np.max(corners_2d, axis=1)
-#                 box_center_x = (x_min + x_max) / 2  # Calculate center X-coordinate
-
-#                 # Ensure object is in camera frame
-#                 if box_in_image(box, cam_intrinsic, (img_width, img_height)):  
-#                     # category = ann['category_name']
-#                     category = ann['category_name'].split('.')[0]
-
-#                     # Only track moving objects (e.g., pedestrians, cyclists, vehicles)
-#                     if "pedestrian" in category or "vehicle" in category or "cyclist" in category:
-#                         if instance_token not in scene_tracks[scene_token]:
-#                             scene_tracks[scene_token][instance_token] = {
-#                                 # "category": category.replace('.', ' '),
-#                                 "category": category,
-#                                 "timestamps": [timestamp],
-#                                 "positions": [box_center_x],
-#                                 "camera_view": cam
-#                             }
-#                         else:
-#                             # Append new frame information
-#                             scene_tracks[scene_token][instance_token]["timestamps"].append(timestamp)
-#                             scene_tracks[scene_token][instance_token]["positions"].append(box_center_x)
-
-
-# ### 2️⃣ GENERATE MOVEMENT DESCRIPTIONS PER CAMERA VIEW ###
-# def generate_movement_descriptions_per_camera(scene_tracks):
-#     """
-#     Generates movement descriptions separately for each camera view.
-#     """
-#     camera_views = {
-#         "CAM_FRONT": [], "CAM_FRONT_LEFT": [], "CAM_FRONT_RIGHT": [],
-#         "CAM_BACK": [], "CAM_BACK_LEFT": [], "CAM_BACK_RIGHT": []
-#     }
-
-#     for scene_token, objects in scene_tracks.items():
-#         all_timestamps = sorted(set(ts for obj in objects.values() for ts in obj["timestamps"]))
-#         timestamp_to_frame = {ts: f"{idx:03d}" for idx, ts in enumerate(all_timestamps)}
-
-#         for instance_token, track in objects.items():
-#             positions = track["positions"]
-#             timestamps = track["timestamps"]
-#             category = track["category"]
-#             camera_view = track["camera_view"]
-
-#             start_frame = timestamp_to_frame[timestamps[0]]
-#             end_frame = timestamp_to_frame[timestamps[-1]]
-
-#             # if positions[0] < positions[-1]:
-#             #     direction = "moved from left to right"
-#             # elif positions[0] > positions[-1]:
-#             #     direction = "moved from right to left"
-#             # else:
-#             #     direction = "remained in the same position"
-            
-#             if positions[0] > positions[-1]:  # Object moved closer to ego vehicle
-#                 direction = "approached the ego vehicle"
-#             elif positions[0] < positions[-1]:  # Object moved away from ego vehicle
-#                 direction = "moved away from the ego vehicle"
-#             else:
-#                 direction = "maintained its distance from the ego vehicle"
-
-#             movement_entry = {
-#                 "scene_token": scene_token,
-#                 "camera_view": camera_view,
-#                 "object": category,
-#                 "movement": f"{category} {direction} between Frame {start_frame} and Frame {end_frame}.",
-#                 "start_frame": start_frame,
-#                 "end_frame": end_frame
-#             }
-
-#             if camera_view in camera_views:
-#                 camera_views[camera_view].append(movement_entry)
-
-#     return camera_views
-
-
-# ### 3️⃣ GENERATE MOVEMENT DESCRIPTIONS FOR LIDAR_TOP ###
-# def generate_movement_descriptions_for_lidar(scene_tracks):
-#     """
-#     Generates movement descriptions for objects detected by LIDAR_TOP.
-#     """
-#     flat_descriptions = []
-
-#     for scene_token, objects in scene_tracks.items():
-#         all_timestamps = sorted(set(ts for obj in objects.values() for ts in obj["timestamps"]))
-#         timestamp_to_frame = {ts: f"{idx:03d}" for idx, ts in enumerate(all_timestamps)}
-
-#         for instance_token, track in objects.items():
-#             positions = track["positions"]
-#             timestamps = track["timestamps"]
-#             category = track["category"]
-
-#             start_frame = timestamp_to_frame[timestamps[0]]
-#             end_frame = timestamp_to_frame[timestamps[-1]]
-
-#             # if positions[0] < positions[-1]:
-#             #     direction = "moved forward"
-#             # elif positions[0] > positions[-1]:
-#             #     direction = "moved backward"
-#             # else:
-#             #     direction = "remained in the same position"
-                
-#             if positions[0] > positions[-1]:  # Object moved closer to ego vehicle
-#                 direction = "approached the ego vehicle"
-#             elif positions[0] < positions[-1]:  # Object moved away from ego vehicle
-#                 direction = "moved away from the ego vehicle"
-#             else:
-#                 direction = "maintained its distance from the ego vehicle"
-
-#             flat_descriptions.append({
-#                 "scene_token": scene_token,
-#                 "sensor": "LIDAR_TOP",
-#                 "object": category,
-#                 "movement": f"{category} {direction} between Frame {start_frame} and Frame {end_frame}.",
-#                 "start_frame": start_frame,
-#                 "end_frame": end_frame
-#             })
-
-#     return flat_descriptions
-
-# import random
-# import numpy as np
-# from nuscenes.utils.geometry_utils import view_points, box_in_image
-# from nuscenes.utils.data_classes import Box
-# from pyquaternion import Quaternion
-
 def track_movement(nusc, sample, scene_tracks):
     """
     Tracks object movement across multiple frames, separated by camera view.
@@ -432,10 +225,10 @@ def generate_movement_descriptions_per_camera(scene_tracks):
                 direction = random.choice(alongside_alternatives)
             elif abs_dx > 100:
                 direction = random.choice(lateral_pass_options["right"] if dx > 0 else lateral_pass_options["left"])
-            elif dx > 0:
-                direction = random.choice(shift_options["right"])
             elif dx < 0:
                 direction = random.choice(shift_options["left"])
+            elif dx > 0:
+                direction = random.choice(shift_options["right"])
             else:
                 direction = random.choice(stationary_options)
                 
@@ -445,7 +238,6 @@ def generate_movement_descriptions_per_camera(scene_tracks):
                 "scene_token": scene_token,
                 "camera_view": camera_view,
                 "object": category,
-                # "movement": f"A {category} {direction} between Frame {start_frame} and Frame {end_frame}.",
                 "movement": f"{article} {category} {direction} between Frame {start_frame} and Frame {end_frame}.",
                 "start_frame": start_frame,
                 "end_frame": end_frame
@@ -512,10 +304,6 @@ def generate_movement_descriptions_for_lidar(scene_tracks):
             abs_dx = abs(dx)
             abs_dz = abs(dz)
 
-            # if dz < -4.0:
-            #     direction = random.choice(overtake_options)
-            # elif dz > 4.0:
-            #     direction = random.choice(passed_by_options)
             if dz < -4.0:
                 direction = "approaches the ego vehicle" if random.random() < 0.1 else random.choice(overtake_options)
             elif dz > 4.0:
@@ -534,7 +322,6 @@ def generate_movement_descriptions_for_lidar(scene_tracks):
                 "scene_token": scene_token,
                 "sensor": "LIDAR_TOP",
                 "object": category,
-                # "movement": f"A {category} {direction} between Frame {start_frame} and Frame {end_frame}.",
                 "movement": f"{article} {category} {direction} between Frame {start_frame} and Frame {end_frame}.",
                 "start_frame": start_frame,
                 "end_frame": end_frame
@@ -591,18 +378,12 @@ def merge_json_files(output_dir, filename_pattern, merged_filename):
                 print(f"Failed to delete scene file {file_path}: {e}")
 
 NUSCENES_SPLITS = {
-    # "train": "v1.0-train",
-    # "train-only": "v1.0-trainval",
-    # "val": "v1.0-val",
     "trainval": "v1.0-trainval",
     "test": "v1.0-test",
     "mini": "v1.0-mini",
 }
 
 DEFAULT_DATA_PATHS = {
-    # "train": "/mnt/nfs_shared_data/dataset/nuScenes/",
-    # "train-only": "/mnt/nfs_shared_data/dataset/nuScenes/",
-    # "val": "/mnt/nfs_shared_data/dataset/nuScenes/",
     "trainval": "/mnt/nfs_shared_data/dataset/cch/nuScenes/",
     "test": "/mnt/nfs_shared_data/dataset/nuScenes/v1.0-test/",
     "mini": "./v1.0-mini/",
