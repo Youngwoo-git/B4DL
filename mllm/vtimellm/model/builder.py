@@ -21,11 +21,8 @@ def load_lora(model, lora_path):
 def load_pretrained_model(args, stage2=None, stage3=None):
     kwargs = {'torch_dtype': torch.float16}
 
-    # model_path = os.path.expanduser(args.model_path)
     model_base = args.model_base
 
-
-    # lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
     print('Loading VTimeLLM from base model...')
     if 'chatglm' in model_base:
         tokenizer = AutoTokenizer.from_pretrained(model_base, trust_remote_code=True)
